@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 
 REGION        = "us-east-1"
 DB_NAME       = "smes_analytics"
-GLUE_ROLE_ARN = "arn:aws:iam::302772524387:role/glue_service_role_for_crawlers"
+GLUE_ROLE_ARN = "arn:aws:iam::#cuenta:role/glue_service_role_for_crawlers"
 LAMBDA_NAME   = "LambdaGlue"
 
 BUCKET             = "serverless-architecture-smes-analytics-gold-zone"
@@ -175,3 +175,4 @@ def run_pipeline():
 
 # ───────────────────── Ejecutar ------------------------------------------------
 run_pipeline()
+
