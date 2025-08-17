@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: iam roles.
+
+Parameters:
+  S3KMSKey:
+    Type: String
+
+  AllowedIpForS3Buckets:
+    Type: String
+    Default: "152.203.107.202/32"
+
+Resources:
+  s3bronzezone:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-architecture-smes-analytics-bronze-zone
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  s3silverzone:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-architecture-smes-analytics-silver-zone
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  s3goldzone:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-architecture-smes-analytics-gold-zone
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        #BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        #RestrictPublicBuckets: true
+
+  s3predictive:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-architecture-smes-analytics-predictive
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        #BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        #RestrictPublicBuckets: true
+
+  s3athenresult:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-architecture-smes-analytics-athena
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        #BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        #RestrictPublicBuckets: true
+  # --------------------------------------------------------------------------
+  # Bucket Policies for lambda
+  # --------------------------------------------------------------------------
+
+  BucketPolicyBronze:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: [s3bronzezone]
+    Properties:
+      Bucket: !Ref s3bronzezone
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowLambda
+            Effect: Allow
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "s3:GetObject"
+            Resource:
+              - !GetAtt s3bronzezone.Arn
+              - !Sub "${s3bronzezone.Arn}/*"
+          - Sid: AllowFromMyIP
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt s3bronzezone.Arn
+              - !Sub "${s3bronzezone.Arn}/*"
+            Condition:
+              IpAddress:
+                aws:SourceIp: !Ref AllowedIpForS3Buckets
+
+  BucketPolicySilver:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: [s3silverzone]
+    Properties:
+      Bucket: !Ref s3silverzone
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowLambda
+            Effect: Allow
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "s3:GetObject"
+            Resource:
+              - !GetAtt s3silverzone.Arn
+              - !Sub "${s3silverzone.Arn}/*"
+          - Sid: AllowFromMyIP
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt s3silverzone.Arn
+              - !Sub "${s3silverzone.Arn}/*"
+            Condition:
+              IpAddress:
+                aws:SourceIp: !Ref AllowedIpForS3Buckets
+  
+  # --------------------------------------------------------------------------
+  # Bucket Policies for Glue + Lambda
+  # --------------------------------------------------------------------------
+  

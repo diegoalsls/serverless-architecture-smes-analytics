@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: kms template.
+
+Resources:
+  S3KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy: 
+        Version: "2012-10-17"
+        Id: politicas-llave
+        Statement:
+          - Sid: Habilitar uso de KMS
+            Effect: Allow
+            Principal: 
+              AWS: !Join ["",["arn:aws:iam::", !Ref 'AWS::AccountId', ":root"]]
+            Action: 
+              - 'kms:*'
+            Resource: '*'
+          - Sid: AllowUseFromThisAccount
+            Effect: Allow
+            Principal: "*"
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:PrincipalAccount: !Ref AWS::AccountId
+
+  MyKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/my-key-alias-${AWS::StackName}"
+      TargetKeyId: !Ref S3KMSKey
+
+Outputs:
+  kmss3:
+      Value: !Ref S3KMSKey
+      Export:
+        Name: kmss3
+  kmsarn:
+      Value: !GetAtt S3KMSKey.Arn
+      Export:
+        Name: kmsarn

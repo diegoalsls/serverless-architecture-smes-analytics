@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Step function.
+
+Parameters:
+    StepExecutionRoleArn:
+        Type: String
+
+Resources:
+
+  StepFunctionETL:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: StepFunctionETLServerless
+      RoleArn: !Ref StepExecutionRoleArn
+      DefinitionString: |
+        {
+          "Comment": "ETL Serverless mediante funciones lambda.",
+          "StartAt": "LambdaTransform",
+          "States": {
+            "LambdaTransform": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": {
+                "FunctionName": "arn:aws:lambda:us-east-1:302772524387:function:LambdaTransform:$LATEST",
+                "Payload": "{% $states.input %}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "LambdaQuality"
+            },
+            "LambdaQuality": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": {
+                "FunctionName": "arn:aws:lambda:us-east-1:302772524387:function:LambdaQuality:$LATEST",
+                "Payload": "{% $states.input %}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "End": true
+            }
+          },
+          "QueryLanguage": "JSONata"
+        }
+
+Outputs:
+  StepFunctionETLArn:
+    Value: !GetAtt StepFunctionETL.Arn
+    Export:
+      Name: StepFunctionETLArn

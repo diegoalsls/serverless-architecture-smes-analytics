@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Event Bridge.
+Parameters:
+  StepFunctionETLArn:
+    Type: String
+  EventBridgeToStepFunctionRoleArn:
+    Type: String
+
+Resources:
+  BronzeFileUploadedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: TriggerStepFunctionOnBronzeUpload
+      EventPattern:
+        source:
+          - "aws.s3"
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - "serverless-architecture-smes-analytics-bronze-zone"
+          object:
+            key:
+              - prefix: "bronze1/procedimientos/"
+              - prefix: "bronze1/mensual_proc/"
+              - prefix: "bronze1/pacientes/"
+      Targets:
+        - Id: StepFunctionTarget
+          Arn: !Ref StepFunctionETLArn
+          RoleArn: !Ref EventBridgeToStepFunctionRoleArn

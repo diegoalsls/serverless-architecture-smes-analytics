@@ -1,0 +1,522 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: iam roles.
+
+Parameters:
+  S3KMSKey:
+    Type: String
+
+  AllowedIpForS3Buckets:
+    Type: String
+    Default: "152.203.107.202/32"
+
+Resources:
+  LambdaExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: LambdaS3AccessPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: ListBuckets
+                  Effect: Allow
+                  Action:
+                    - s3:ListBucket
+                  Resource:
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-bronze-zone
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-silver-zone
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+                - Sid: ReadWriteObjects
+                  Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                    - s3:DeleteObject
+                  Resource:
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-bronze-zone/*
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-silver-zone/*
+                    - !Sub arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+                - Effect: Allow
+                  Action:
+                    - kms:Decrypt
+                    - kms:Encrypt
+                    - kms:GenerateDataKey
+                  Resource:
+                    - !Ref S3KMSKey 
+          - PolicyName: LambdaGlueJobControl
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: GlueStartAndRead
+                  Effect: Allow
+                  Action:
+                    - glue:StartJobRun
+                    - glue:GetJobRun
+                    - glue:GetJobRuns
+                    - glue:GetJob
+                    - glue:BatchGetJobs
+                  Resource: "*"
+                - Sid: PassJobRole
+                  Effect: Allow
+                  Action:
+                    - iam:PassRole
+                  Resource: !GetAtt GlueJobPredictiveRole.Arn
+
+  GlueJobPredictiveRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSGlueServiceRole-predictive-job
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GluePredictiveS3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ListSourceBucket
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: 
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-deploy
+              - Sid: ReadSourceObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: 
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-deploy/*
+              - Sid: ListTargetBucket
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+              - Sid: WriteTargetObjects
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:GetObject
+                Resource: arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+        - PolicyName: GlueInvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeLambdaGlue
+                Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:LambdaGlue 
+
+  LambdaExecutionRoleGlueSetup:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: lambda_glue_catalog_execution_role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: GlueAndS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:CreateDatabase
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateCrawler
+                  - glue:GetCrawler
+                  - glue:UpdateCrawler
+                  - glue:StartCrawler
+                  - glue:GetCrawlers
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+        - PolicyName: PassCrawlerRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PassCrawlerExecRole
+                Effect: Allow
+                Action: 
+                  - iam:PassRole
+                Resource: 
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/glue_service_role_for_crawlers
+
+  GlueServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: glue_service_role_for_crawlers
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GlueCrawlerS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+              - Effect: Allow
+                Action:
+                  - glue:CreateTable
+                  - glue:UpdateTable
+                  - glue:DeleteTable
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetDatabase
+                Resource: "*"
+
+  EventBridgeToStepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: eventbridge-stepfn-invoke-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowStepFunctionStart
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: "*"
+
+  AthenaQuickSightRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: analytics-athena-quicksight-role
+      Description: Permite a Athena y QuickSight leer buckets gold/predictive y usar Glue.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: athena.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: quicksight.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AthenaCoreAndGlueRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AthenaCore
+                Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:ListQueryExecutions
+                  - athena:ListWorkGroups
+                  - athena:GetWorkGroup
+                  - athena:ListDataCatalogs
+                  - athena:GetDataCatalog
+                  - athena:ListDatabases
+                  - athena:ListTableMetadata
+                Resource: "*"
+              - Sid: GlueReadOnly
+                Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                Resource: "*"
+        - PolicyName: S3GoldPredictiveRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadGoldPredictive
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+        - PolicyName: S3AthenaResultsRW
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AthenaResults
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-athena
+                  - arn:aws:s3:::serverless-architecture-smes-analytics-athena/*
+        - PolicyName: DecryptKMS
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DecryptObjects
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Ref S3KMSKey
+#-----------------------------------------Bucket policies-------------------------------------#
+
+  BucketPolicyGlueGold:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - LambdaExecutionRole          # roles se crean primero
+      - GlueJobPredictiveRole
+      - AthenaQuickSightRole
+    Properties:
+      Bucket: serverless-architecture-smes-analytics-gold-zone
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # — Glue y Lambda —
+          - Sid: AllowGlueAndLambda
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt GlueJobPredictiveRole.Arn
+                - !GetAtt LambdaExecutionRole.Arn
+            Action: s3:GetObject
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+          # — Acceso desde tu IP —
+          - Sid: AllowFromMyIP
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: s3:*
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+            Condition:
+              IpAddress:
+                "aws:SourceIp": !Ref AllowedIpForS3Buckets
+          # — Rol de Athena/QuickSight (solo si ya existe) —
+          - Sid: AllowAthenaQuickSightRole
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt AthenaQuickSightRole.Arn
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+              - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+          - Sid: AllowQuickSightServiceRoleGold
+            Effect: Allow
+            Principal: "*"
+              #AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-quicksight-service-role-v0
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+              - arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+          - Sid: AllowQuickSightResultsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone
+
+          - Sid: AllowQuickSightResultsObjectsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-gold-zone/*
+
+  BucketPolicyGluePredictive:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - LambdaExecutionRole          # roles se crean primero
+      - GlueJobPredictiveRole
+      - AthenaQuickSightRole
+    Properties:
+      Bucket: serverless-architecture-smes-analytics-predictive
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # 1) Permisos de lectura para Glue y Lambda
+          - Sid: AllowGlueAndLambdaPredictive
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt LambdaExecutionRole.Arn
+                - !GetAtt GlueJobPredictiveRole.Arn
+            Action: s3:GetObject
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+          # 2) Acceso completo desde tu IP corporativa
+          - Sid: AllowFromMyIP
+            Effect: Allow
+            Principal: 
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: s3:*
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+            Condition:
+              IpAddress:
+                "aws:SourceIp": !Ref AllowedIpForS3Buckets
+          # 3) Rol de Athena-QuickSight
+          - Sid: AllowAthenaQuickSightRole
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt AthenaQuickSightRole.Arn
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+              - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+          # 4) Service-role predeterminada de QuickSight
+          - Sid: AllowQuickSightServiceRole
+            Effect: Allow
+            Principal: "*"
+              #AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-quicksight-service-role-v0
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+              - arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+          - Sid: AllowQuickSightResultsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-predictive
+
+          - Sid: AllowQuickSightResultsObjectsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-predictive/*
+  
+  BucketPolicyAthenaResults:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: serverless-architecture-smes-analytics-athena
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowQuickSightResultsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-athena
+
+          - Sid: AllowQuickSightResultsObjectsRW
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/aws-quicksight-service-role-v0
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+            Resource: arn:aws:s3:::serverless-architecture-smes-analytics-athena/*
+
+Outputs:
+  LambdaExecutionRole:
+    Value: !Ref LambdaExecutionRole
+    Export:
+      Name: LambdaExecutionRole
+  LambdaExecutionRolearn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: LambdaExecutionRolearn
+  GlueJobPredictiveRoleArn:  
+    Value: !GetAtt GlueJobPredictiveRole.Arn
+    Export:
+      Name: GlueJobPredictiveRoleArn
+  LambdaExecutionRoleGlueSetup:
+    Value: !GetAtt LambdaExecutionRoleGlueSetup.Arn
+    Export:
+      Name: LambdaExecutionRoleGlueSetup
+  EventBridgeToStepFunctionRoleArn:
+    Value: !GetAtt EventBridgeToStepFunctionRole.Arn
+    Export:
+      Name: EventBridgeToStepFunctionRoleArn

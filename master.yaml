@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Resources:
+
+    kms:
+        Type: "AWS::CloudFormation::Stack"
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-kms.yaml
+
+    s3:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn:
+            - kms
+            - net
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-s3.yaml
+            Parameters:
+                S3KMSKey: !GetAtt kms.Outputs.kmss3
+
+    iam:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn: 
+            - kms
+            - s3
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-iam.yaml
+            Parameters:
+                S3KMSKey: !GetAtt kms.Outputs.kmsarn
+
+    lambdas:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn: iam
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-lambdas.yaml
+            Parameters:
+                LambdaExecutionRole: !GetAtt iam.Outputs.LambdaExecutionRolearn
+                LambdaExecutionRoleGlueSetup: !GetAtt iam.Outputs.LambdaExecutionRoleGlueSetup
+
+    glue:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn: 
+            - iam
+            - kms
+            - s3
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-glue.yaml
+            Parameters:
+                GlueJobPredictiveRoleArn: !GetAtt iam.Outputs.GlueJobPredictiveRoleArn
+
+    step:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn: 
+            - lambdas
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-step.yaml
+            Parameters:
+                StepExecutionRoleArn: !GetAtt lambdas.Outputs.StepExecutionRoleArn
+
+    eventbridge:
+        Type: "AWS::CloudFormation::Stack"
+        DependsOn: 
+            - step
+            - iam
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-eventbridge.yaml
+            Parameters:
+                StepFunctionETLArn: !GetAtt step.Outputs.StepFunctionETLArn
+                EventBridgeToStepFunctionRoleArn: !GetAtt iam.Outputs.EventBridgeToStepFunctionRoleArn
+
+    net:
+        Type: "AWS::CloudFormation::Stack"
+        Properties:
+            TemplateURL: https://serverless-architecture-smes-analytics-deploy.s3.us-east-1.amazonaws.com/iac-files/template-net.yaml
+    
+
+
+
+

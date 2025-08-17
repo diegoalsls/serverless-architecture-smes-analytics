@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue Data Catalog gold_analytics (database, classifiers y crawlers).
+
+# ───────────── Parámetros reutilizables ──────────────────
+Parameters:
+
+  GlueJobPredictiveRoleArn:
+    Type: String
+    Description: IAM role job glue.
+
+Resources:
+
+  GoldAnalyticsDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: smes_analytics
+
+  CsvSemicolonClassifier:
+    Type: AWS::Glue::Classifier
+    Properties:
+      CsvClassifier:
+        Name: csv_semicolon
+        Delimiter: ';'
+        QuoteSymbol: '"'
+        ContainsHeader: PRESENT
+        DisableValueTrimming: false
+        AllowSingleColumn: true
+
+  CsvCommaClassifier:
+    Type: AWS::Glue::Classifier
+    Properties:
+      CsvClassifier:
+        Name: csv_comma
+        Delimiter: ','
+        QuoteSymbol: '"'
+        ContainsHeader: PRESENT
+        DisableValueTrimming: false
+        AllowSingleColumn: true
+
+  GluePredictionPacientesJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: prediction_pacientes
+      Role: !Ref GlueJobPredictiveRoleArn
+      GlueVersion: "4.0"
+      WorkerType: G.1X
+      NumberOfWorkers: 5
+      Command:
+        Name: glueetl
+        ScriptLocation: "s3://serverless-architecture-smes-analytics-deploy/PyGlue/glue_prediction_pacientes.py"
+      DefaultArguments:
+        "--enable-glue-datacatalog": "true"
+        "--job-bookmark-option": "job-bookmark-enable"
+        "--TempDir": "s3://serverless-architecture-smes-analytics-predictive/tmp/"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxRetries: 1
+      Timeout: 480     

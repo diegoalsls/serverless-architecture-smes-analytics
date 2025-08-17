@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: lambdas deploy
+
+Parameters:
+  LambdaExecutionRole:
+    Type: String
+  LambdaExecutionRoleGlueSetup:
+    Type: String
+
+Resources:
+  LambdaFunctionTransform:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaTransform
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !Ref LambdaExecutionRole
+      Code:
+        S3Bucket: serverless-architecture-smes-analytics-deploy
+        S3Key: PyLambda/lambda_function_transform.zip
+      MemorySize: 1024
+      Timeout: 60
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312:18
+        
+  LambdaFunctionQuality:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaQuality
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !Ref LambdaExecutionRole
+      Code:
+        S3Bucket: serverless-architecture-smes-analytics-deploy
+        S3Key: PyLambda/lambda_function_quality.zip
+      MemorySize: 1024
+      Timeout: 60
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312:18
+
+  LambdaFunctionGlueCatalogs:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaGlue
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !Ref LambdaExecutionRoleGlueSetup
+      Code:
+        S3Bucket: serverless-architecture-smes-analytics-deploy
+        S3Key: PyLambda/lambda_function_glue_tables.zip
+      MemorySize: 512
+      Timeout: 300
+  StepExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: StepFunctionInvokeLambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt LambdaFunctionTransform.Arn
+                  - !GetAtt LambdaFunctionQuality.Arn
+Outputs:
+  StepExecutionRoleArn:
+    Value: !GetAtt StepExecutionRole.Arn
+    Export:
+      Name: StepExecutionRoleArn
+
